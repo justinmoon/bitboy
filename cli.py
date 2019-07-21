@@ -16,7 +16,7 @@ CHANGE_ADDRESS = 'tb1q7v4ynhl2z3rrqshnp96w3m4n2xnd7qr954az4z'
 ser =  Serial(find_port(), baudrate=115200)
 
 
-def sign(tx, script_pubkeys):
+def sign(tx, script_pubkeys, input_values):
     # request signature over serial port
     command = "sign"
     msg = {
@@ -24,6 +24,7 @@ def sign(tx, script_pubkeys):
         "payload": {
             "tx": tx,
             "script_pubkeys": script_pubkeys,
+            "input_values": input_values,
         }
     }
     ser.write(json.dumps(msg).encode() + b'\r\n')
@@ -42,35 +43,33 @@ def sign(tx, script_pubkeys):
         return res['signed']
  
 
-def parse():
-    parser = argparse.ArgumentParser(description='BitBoy Bitcoin Wallet')
-    subparsers = parser.add_subparsers(help='sub-command help')
-
-    # "bitboy send"
-    send = subparsers.add_parser('send', help='send bitcoins')
-    send.add_argument('recipient', help='bitcoin address')
-    send.add_argument('amount', type=Decimal, help='how many bitcoins to send')
-    send.set_defaults(func=handle_send)
-
-    return parser.parse_args()
-
-
 def handle_send(args):
     # construct inputs
     utxos = [(u['txid'], u['vout']) for u in testnet.listunspent(0)]
     tx_ins = []
     input_sum = Decimal(0)
+    input_values = []
     script_pubkeys = []
     for tx_id, tx_index in utxos:
         tx = testnet.getrawtransaction(tx_id, True)
-        # no segwit yet
-        if tx["vout"][tx_index]["scriptPubKey"]["type"] not in["pubkeyhash", "scripthash"]:
+        # FIXME
+        if "tb1qnakk0jlpsylxs78zs2cp4rk8aq9y2458el28wm" in tx["vout"][tx_index]["scriptPubKey"]["addresses"]:
+            print("can't sign this. generated with bitcoin-cli and haven't exported key yet.")
+            continue
+        script_types = ["pubkeyhash", "scripthash", "witness_v0_keyhash"]
+        script_types = ["scripthash"]
+        if tx["vout"][tx_index]["scriptPubKey"]["type"] not in script_types:
+            print('pass')
             continue
         tx_ins.append({
             "txid": tx_id,
             "vout": int(tx_index),
         })
-        input_sum += tx['vout'][tx_index]['value']
+        value = tx['vout'][tx_index]['value']
+        input_sum += value
+        print(value)
+        input_values.append(int(value * 100_000_000))
+        print(input_values)
         script_pubkeys.append(tx['vout'][tx_index]['scriptPubKey']['hex'])
         if input_sum > args.amount:
             break
@@ -86,18 +85,27 @@ def handle_send(args):
 
     # have bitcoind construct transaction
     tx = testnet.createrawtransaction(tx_ins, tx_outs)
+    print("rawtx", tx)
 
-    # sign & broadcast 
-    signed = sign(tx, script_pubkeys)
+    # sign
+    signed = sign(tx, script_pubkeys, input_values)
+    print("transaction signed:", signed)
+
+    # broadcast
     sent = testnet.sendrawtransaction(signed)
 
-    # request signature from bitboy
-    signed = sign(tx, script_pubkeys=script_pubkeys)
 
-    # broadcast to bitcoin p2p network
-    sent = testnet.sendrawtransaction(signed)
-    print("broadcasted:", sent)
+def parse():
+    parser = argparse.ArgumentParser(description='BitBoy Bitcoin Wallet')
+    subparsers = parser.add_subparsers(help='sub-command help')
 
+    # "bitboy send"
+    send = subparsers.add_parser('send', help='send bitcoins')
+    send.add_argument('recipient', help='bitcoin address')
+    send.add_argument('amount', type=Decimal, help='how many bitcoins to send')
+    send.set_defaults(func=handle_send)
+
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
