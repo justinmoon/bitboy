@@ -7,12 +7,13 @@ from utils import find_port, testnet
 
 from bedrock.tx import Tx, TxIn, TxOut
 from bedrock.ecc import PrivateKey
-from bedrock.helper import decode_base58
-from bedrock.script import p2pkh_script
+from bedrock.helper import decode_base58, little_endian_to_int, hash256, decode_bech32
+from bedrock.script import p2pkh_script, p2wsh_script
 
 
 ser =  Serial(find_port(), baudrate=115200)
 
+SAT = Decimal(10) ** -8
 
 def test_sign_p2pkh():
     tx_ins = []
@@ -46,4 +47,17 @@ def test_sign_p2pkh():
     print(f"Received Signed TX: {result}")
     assert signed_tx.verify()
 
+def test_spend_p2sh():
+    pass
 
+def test_spend_p2wpkh():
+    pass
+
+def test_spend_p2sh_p2wpkh():
+    pass
+
+def test_spent_p2sh_p2wsh():
+    pass
+
+def test_spend_p2wsh():
+    pass

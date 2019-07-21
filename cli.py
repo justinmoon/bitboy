@@ -52,12 +52,7 @@ def handle_send(args):
     script_pubkeys = []
     for tx_id, tx_index in utxos:
         tx = testnet.getrawtransaction(tx_id, True)
-        # FIXME
-        if "tb1qnakk0jlpsylxs78zs2cp4rk8aq9y2458el28wm" in tx["vout"][tx_index]["scriptPubKey"]["addresses"]:
-            print("can't sign this. generated with bitcoin-cli and haven't exported key yet.")
-            continue
         script_types = ["pubkeyhash", "scripthash", "witness_v0_keyhash"]
-        script_types = ["scripthash"]
         if tx["vout"][tx_index]["scriptPubKey"]["type"] not in script_types:
             print('pass')
             continue

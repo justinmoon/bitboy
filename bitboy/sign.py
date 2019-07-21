@@ -58,8 +58,11 @@ def sign(tx, script_pubkeys, input_values):
     """only supports 1 input from hard-coded private key for now"""
     print("signing")
     # hard-coded secret
-    secret = 58800187338825965989061197411175755305019286370732616970021105328088303800804
-    secret = 8675309
+    # old
+    # secret = 58800187338825965989061197411175755305019286370732616970021105328088303800804
+    # jimmy's
+    # secret = 8675309
+    secret = 58800187338825965989061197411175755305019286370732616970021105328088303800803
     key = PrivateKey(secret)
 
     # tx.segwit = True

@@ -16,3 +16,8 @@ requests==2.22.0
 rshell==0.0.26
 six==1.12.0
 urllib3==1.25.3
+
+
+# Can be more convenient for development
+# -e ../../projects/bedrock
+-e git+https://github.com/justinmoon/bedrock.git#egg=bedroc
