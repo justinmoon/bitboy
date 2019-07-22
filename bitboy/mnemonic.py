@@ -1,37 +1,35 @@
-import m5stack
 from m5stack import LCD, fonts, color565
-from bitcoin import PrivateKey
-from mnemonic import secure_mnemonic
+from bitcoin.mnemonic import secure_mnemonic
 
- lcd = LCD()
+lcd = LCD()
 lcd.set_font(fonts.tt24)
 lcd.erase()
 
 
- def title(s):
+def title(s):
     # calculations
     sw = fonts.tt32.get_width(s)
     padding = (lcd.width - sw) // 2
 
-     # configure lcd
+    # configure lcd
     lcd.set_font(fonts.tt32)
     lcd.set_pos(padding, 20)
 
-     # print
+    # print
     lcd.print(s)
 
 
- def mnemonic_columns():
+def mnemonic_columns():
     # generate mnemonic
     mnemonic = secure_mnemonic()
 
-     # print title
+    # print title
     title("Seed Words")
 
-     # set font
+    # set font
     lcd.set_font(fonts.tt24)
 
-     # variables for printing
+    # variables for printing
     words = mnemonic.split()
     labeled = [str(i) + ". " + word for i, word in enumerate(words, 1)]
     words_per_col = len(words) // 2
@@ -42,18 +40,18 @@ lcd.erase()
     left_col_x, left_col_y = pad_x, lcd._y + pad_y
     right_col_x, right_col_y = 2 * pad_x + col_width, lcd._y + pad_y
 
-     # print left column
+    # print left column
     print(left_col_x, left_col_y)
     lcd.set_pos(left_col_x, left_col_y)
     for word in labeled[:words_per_col]:
         lcd.print(word)
 
-     # print right column
+    # print right column
     print(right_col_x, right_col_y)
     lcd.set_pos(right_col_x, right_col_y)
     for word in labeled[words_per_col:]:
         lcd.print(word)
 
 
- if __name__ == '__main__':
-    mnemonic_columns()
+if __name__ == '__main__':
+     mnemonic_columns()
