@@ -6,6 +6,7 @@ cffi==1.12.3
 chardet==3.0.4
 Click==7.0
 coincurve==12.0.0
+esptool==2.7
 idna==2.8
 pycparser==2.19
 pyserial==3.4
