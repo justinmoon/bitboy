@@ -6,7 +6,7 @@ from io import BytesIO
 from bedrock.tx import Tx, TxIn, TxOut
 from bedrock.ecc import PrivateKey
 from bedrock.helper import decode_base58, little_endian_to_int, hash256, decode_bech32
-from bedrock.script import p2pkh_script, p2sh_script, Script
+from bedrock.script import p2pkh_script, p2sh_script, p2wpkh_script, Script
 
 from cli import sign
 
@@ -42,7 +42,16 @@ def test_spend_p2sh():
     assert signed_tx.verify()
 
 def test_spend_p2wpkh():
-    pass
+    raw_tx = '01000000000101ebd12d3bd14fb3d7488b2deb74949b8180bb3138130b22274550e47c691e23630100000000ffffffff01ac8401000000000017a914d2d78617c37107637e76c1b20ffdbc8b58df4e84870000000000'
+    input_values = [100000]
+    script_pubkey = p2wpkh_script(key.point.hash160())
+    raw_script_pubkey = script_pubkey.raw_serialize().hex()
+    script_pubkeys = [raw_script_pubkey]
+    result = sign(raw_tx, script_pubkeys, input_values)
+    signed_tx = Tx.parse(BytesIO(bytes.fromhex(result)), testnet=True)
+    print(f"Received Signed TX: {result}")
+    assert signed_tx.verify()
+
 
 def test_spend_p2sh_p2wpkh():
     pass
