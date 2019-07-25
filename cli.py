@@ -16,7 +16,7 @@ CHANGE_ADDRESS = 'tb1q7v4ynhl2z3rrqshnp96w3m4n2xnd7qr954az4z'
 ser =  Serial(find_port(), baudrate=115200)
 
 
-def sign(tx, script_pubkeys, input_values):
+def sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_values):
     # request signature over serial port
     command = "sign"
     msg = {
@@ -24,6 +24,8 @@ def sign(tx, script_pubkeys, input_values):
         "payload": {
             "tx": tx,
             "script_pubkeys": script_pubkeys,
+            "redeem_scripts": redeem_scripts,
+            "witness_scripts": witness_scripts,
             "input_values": input_values,
         }
     }
@@ -62,9 +64,7 @@ def handle_send(args):
         })
         value = tx['vout'][tx_index]['value']
         input_sum += value
-        print(value)
         input_values.append(int(value * 100_000_000))
-        print(input_values)
         script_pubkeys.append(tx['vout'][tx_index]['scriptPubKey']['hex'])
         if input_sum > args.amount:
             break
@@ -89,7 +89,6 @@ def handle_send(args):
     # broadcast
     sent = testnet.sendrawtransaction(signed)
 
-
 def parse():
     parser = argparse.ArgumentParser(description='BitBoy Bitcoin Wallet')
     subparsers = parser.add_subparsers(help='sub-command help')
@@ -102,8 +101,6 @@ def parse():
 
     return parser.parse_args()
 
-
 if __name__ == '__main__':
     args = parse()
     args.func(args)
-
