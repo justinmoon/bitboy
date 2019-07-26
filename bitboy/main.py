@@ -15,32 +15,67 @@ from machine import Pin
 from m5stack.pins import BUTTON_A_PIN, BUTTON_B_PIN, BUTTON_C_PIN
 from m5stack import LCD, fonts
 from sys import stdin, stdout
+from bitcoin.hd import HDPrivateKey
 
-A = Pin(BUTTON_A_PIN, Pin.IN, Pin.PULL_UP)
-B = Pin(BUTTON_B_PIN, Pin.IN, Pin.PULL_UP)
-C = Pin(BUTTON_C_PIN, Pin.IN, Pin.PULL_UP)
+A_PIN = Pin(BUTTON_A_PIN, Pin.IN, Pin.PULL_UP)
+B_PIN = Pin(BUTTON_B_PIN, Pin.IN, Pin.PULL_UP)
+C_PIN = Pin(BUTTON_C_PIN, Pin.IN, Pin.PULL_UP)
+
+A_BUTTON = Pushbutton(A_PIN)
+B_BUTTON = Pushbutton(B_PIN)
+C_BUTTON = Pushbutton(C_PIN)
+
+KEY = None  # HDPrivateKey
+INDEX = 0
+ADDRESS = "bech32"  # bech32 or legacy
 
 lcd = LCD()
-lcd.set_font(fonts.tt32)
+lcd.set_font(fonts.tt24)
 lcd.erase()
 
 def release_button(pin): 
-    if pin == A:
+    if pin == A_PIN:
         lcd.print("Button A")
-    if pin == B:
+    if pin == B_PIN:
         lcd.print("Button B")
-    if pin == C:
+    if pin == C_PIN:
         lcd.print("Button C")
+
+def print_address(key):
+    if ADDRESS == 'bech32':
+        address = key.bech32_address()
+    elif ADDRESS == 'legacy':
+        # FIXME: rename to .legacy_address()
+        address = key.address()
+    else:
+        raise ValueError("Invalid ADDRESS value")
+    lcd.erase()
+    lcd.set_pos(20, 20)
+    path = "m/84'/1'/0'/" + str(INDEX)  # FIXME: copy pasta
+    lcd.print(path)
+    lcd.print(address)
+
+
+def traverse_button(pin):
+    global INDEX, ADDRESS
+    if pin == A_PIN:
+        if INDEX != 0:
+            INDEX -= 1
+    if pin == B_PIN:
+        ADDRESS = 'bech32' if ADDRESS == 'legacy' else 'legacy' 
+    if pin == C_PIN:
+        INDEX += 1
+    key = KEY.child(INDEX, False)
+    print_address(key)
+
 
 async def button_manager():
     # TODO: these will need to be accessible from serial coroutine.
     # basically, global variables so that new behavior can be registered w/ .x_func()
-    a = Pushbutton(A)
-    a.release_func(release_button, (A,))
-    b = Pushbutton(B)
-    b.release_func(release_button, (B,))
-    c = Pushbutton(C)
-    c.release_func(release_button, (C,))
+    # and i'm not sure why this must run in a coroutine ...
+    A_BUTTON.release_func(traverse_button, (A_PIN,))
+    B_BUTTON.release_func(traverse_button, (B_PIN,))
+    C_BUTTON.release_func(traverse_button, (C_PIN,))
 
 async def serial_manager():
     sreader = uasyncio.StreamReader(stdin)
@@ -51,10 +86,21 @@ async def serial_manager():
         await swriter.awrite(res)
         lcd.print(res)
 
+async def start():
+    global KEY
+    lcd.print('Deriving')
+    mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+    password = ""
+    path = b"m/84'/1'/0'"
+    KEY = HDPrivateKey.from_mnemonic(mnemonic, password, path=path, testnet=True)
+    child = KEY.child(0, False)
+    print_address(child)
+
 def main():
     loop = uasyncio.get_event_loop()
     loop.create_task(button_manager())
     loop.create_task(serial_manager())
+    loop.create_task(start())
     loop.run_forever()
 
 if __name__ == '__main__':
