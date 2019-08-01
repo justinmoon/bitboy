@@ -6,6 +6,10 @@ lcd.set_font(fonts.tt24)
 lcd.erase()
 
 
+def seed_rng():
+    from urandom import seed
+    seed(888)
+
 def title(s):
     # calculations
     sw = fonts.tt32.get_width(s)
@@ -54,4 +58,5 @@ def mnemonic_columns():
 
 
 if __name__ == '__main__':
-     mnemonic_columns()
+    seed_rng()
+    mnemonic_columns()

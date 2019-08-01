@@ -3,10 +3,11 @@ steps:
 - [x] asyncio button task that prints "Button N" to screen
 - [x] asyncio serial task that prints messages to screen (2 tasks at once)
 - [x] screen for traversing HD hierarchy
-- mnemonic screen
+- [x] mnemonic screen
 - signing
 '''
 
+import json
 import uasyncio
 from aswitch import Pushbutton
 from machine import Pin
@@ -17,6 +18,10 @@ from m5stack import LCD, fonts
 from sys import stdin, stdout
 from bitcoin.hd import HDPrivateKey
 from bitcoin.mnemonic import secure_mnemonic
+from binascii import hexlify, unhexlify
+from bitcoin.tx import Tx
+from bitcoin.script import Script
+from io import BytesIO
 import urandom
 
 A_PIN = Pin(BUTTON_A_PIN, Pin.IN, Pin.PULL_UP)
@@ -81,10 +86,14 @@ async def serial_manager():
     sreader = uasyncio.StreamReader(stdin)
     swriter = uasyncio.StreamWriter(stdout, {})  # TODO: what is this second param?
     while True:
-        msg = await sreader.readline()
-        res = '(recv) ' + msg.decode().strip()
-        await swriter.awrite(res)
-        lcd.print(res)
+        raw_msg = await sreader.readline()
+        try:
+            msg = json.loads(raw_msg.decode().strip())
+        except Exception as e:
+            continue
+        res = handle_msg(msg)
+        json_res = json.dumps(res) + '\r\n'  # FIXME
+        await swriter.awrite(json_res)
 
 def title(s):
     # calculations
@@ -126,6 +135,67 @@ def mnemonic_columns(mnemonic):
     for word in labeled[words_per_col:]:
         lcd.print(word)
 
+def script_from_hex(script_hex):
+    if script_hex is not None:
+        return Script.parse(BytesIO(unhexlify(script_hex)))
+
+def handle_msg(msg):
+    if msg["command"] == "sign":
+        # parse transaction
+        tx = Tx.parse(BytesIO(unhexlify(msg['payload']['tx'])), testnet=True)
+        script_pubkeys = [script_from_hex(hx) for hx in msg['payload']['script_pubkeys']]
+        redeem_scripts = [script_from_hex(hx) for hx in msg['payload']['redeem_scripts']]
+        witness_scripts = [script_from_hex(hx) for hx in msg['payload']['witness_scripts']]
+        input_values = msg['payload']['input_values']
+        signed = handle_sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_values)
+        return {
+            "signed": signed,
+        }
+    elif msg["command"] == "addr":
+        return handle_addr()
+    else:
+        return {
+            "error": "command not recognized: " + msg['command'],
+        }
+
+def handle_sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_values):
+    """only supports 1 input from hard-coded private key for now"""
+    # useful for testing
+    # secret = 58800187338825965989061197411175755305019286370732616970021105328088303800803
+    # private_key = PrivateKey(secret)
+
+    private_key = KEY.child(0, False).private_key
+
+    items = list(zip(range(len(tx.tx_ins)), tx.tx_ins, script_pubkeys, redeem_scripts, witness_scripts, input_values))
+    assert len(items) == len(tx.tx_ins), 'items were mangled'
+    for input_index, tx_in, script_pubkey, redeem_script, witness_script, input_value in items:
+        if script_pubkey.is_p2pkh_script_pubkey():
+            print("signing p2pkh")
+            tx.sign_input_p2pkh(input_index, private_key, script_pubkey)
+        elif script_pubkey.is_p2sh_script_pubkey():
+            print("signing p2sh")
+            tx.sign_input_p2sh(input_index, private_key, redeem_script)
+        elif script_pubkey.is_p2wpkh_script_pubkey():
+            print("signing p2wpkh")
+            tx.segwit = True  # FIXME
+            assert input_value is not None, "input value needed for segwit signature"
+            tx.sign_input_p2wpkh(input_index, input_value, private_key, script_pubkey)
+        elif script_pubkey.is_p2wsh_script_pubkey():
+            print("signing p2wsh")
+            assert input_value is not None, "input value needed for segwit signature"
+            assert witness_script is not None, "witness script required to sign p2wsh input"
+            tx.sign_input_p2wsh(input_index, input_value, private_key, witness_script)
+        else:
+            raise ValueError('unknown input type')
+    return hexlify(tx.serialize())
+
+def handle_addr():
+    # TODO: require bip32 path argument
+    addr = KEY.child(0, False).bech32_address()
+    return {
+        "address": addr,
+    }
+
 async def start():
     global KEY
 
@@ -141,6 +211,11 @@ async def start():
         password = ""
         path = b"m/84'/1'/0'"
         KEY = HDPrivateKey.from_mnemonic(mnemonic, password, path=path, testnet=True)
+
+        # TODO
+        # sd = machine.SDCard(slot=2, mosi=23, miso=19, sck=18, cs=4)
+        # uos.mount(sd, '/sd')
+
         with open("key", "wb") as f:
             f.write(KEY.serialize())
 
