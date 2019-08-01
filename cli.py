@@ -14,12 +14,12 @@ from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 from bedrock.helper import encode_varstr
 
 
-CHANGE_ADDRESS = 'tb1qjy3lgaw5rtckrrdg0xxcqhxpmzx9g5zqkuraej'
+CHANGE_ADDRESS = 'tb1qfyt0luecznx07nr60zeeukr5zp8wajw4q4pugr'
 ser =  Serial(find_port(), baudrate=115200)
 
 rpc_template = "http://%s:%s@%s:%s/wallet/%s"
 rpc = AuthServiceProxy(rpc_template % ('bitcoin', 'python', 'localhost', 18332, ''))
-wallet_rpc = AuthServiceProxy(rpc_template % ('bitcoin', 'python', 'localhost', 18332, 'bitboy'))
+wallet_rpc = AuthServiceProxy(rpc_template % ('bitcoin', 'python', 'localhost', 18332, 'bitboy'), timeout=60*5)  # timeout after 5 minutes
 
 
 def sat_to_btc(d):
@@ -71,12 +71,13 @@ def create_wallet_and_export(xpub):
                 raise Exception("Couldn't establish watch-only Bitcoin Core wallet")
 
     # export address
-    xpub = 'tpubDE98e6phWTmuvERETHCjXzAz6S6kmYGSnkycpBu9SERVSNFnTTBUx6WERcUMZAxwrPS6vnTReVxGnrqVJD937ASR8aJ7eTv127vGhLMPBHG'  # FIXME
-    raw_descriptor = 'wpkh(' + xpub + ')'
+    # xpub = 'tpubDE98e6phWTmuvERETHCjXzAz6S6kmYGSnkycpBu9SERVSNFnTTBUx6WERcUMZAxwrPS6vnTReVxGnrqVJD937ASR8aJ7eTv127vGhLMPBHG'  # FIXME
+    raw_descriptor = 'wpkh(' + xpub + '/*)'
     descriptor = wallet_rpc.getdescriptorinfo(raw_descriptor)['descriptor']
     r = wallet_rpc.importmulti([{
         'desc': descriptor,
         "timestamp": int(time.time() - 60*60*24*30),  # 30 days
+        'range': [0, 1000],
         "watchonly": True,
     }])
     print("importmulti: ", r)
@@ -137,6 +138,9 @@ def handle_address(args):
 
     msg = {
         "command": "addr",
+        "payload": {
+            "path": args.path,
+        }
     }
     ser.write(json.dumps(msg).encode() + b'\r\n')
 
@@ -157,9 +161,36 @@ def handle_address(args):
             break
     address = res['address']
     print(address)
-    create_wallet_and_export(address)
 
-    create_wallet_and_export(None)
+def handle_xpub(args):
+    # FIXME: copy-pasta
+    msg = {
+        "command": "xpub",
+        "payload": {
+            "path": args.path,
+        },
+    }
+    ser.write(json.dumps(msg).encode() + b'\r\n')
+
+    # wait for wallet response
+    while True:
+        raw_res = ser.read_until(b'\r\n').strip(b'\r\n').decode()
+        print(raw_res)
+        try:
+            res = json.loads(raw_res)
+        except:
+            print("error parsing:", raw_res)
+            continue
+        if "xpub" not in res:
+            print("other json:", res)
+            continue
+        else:
+            break
+    xpub = res['xpub']
+    print("xpub", xpub)
+    if args.watch:
+        print("exporting to bitcoin core")
+        create_wallet_and_export(xpub)
 
 def parse():
     parser = argparse.ArgumentParser(description='BitBoy Bitcoin Wallet')
@@ -173,7 +204,15 @@ def parse():
 
     # "bitboy address"
     address = subparsers.add_parser('address', help='generate receiving address')
+    address.add_argument('path', help='bip32 derivation path', default="m/84'/1'/0'/0")
     address.set_defaults(func=handle_address)
+
+    # "bitboy xpub"
+    xpub = subparsers.add_parser('xpub', help='get xpub at path')
+    xpub.add_argument('path', help="bip32 derivation path (e.g. \"m/84'/1'/0'/0\")")
+    xpub.add_argument('--watch', help='Export to bitcoin core watch-only wallet', action='store_true', default=False)
+
+    xpub.set_defaults(func=handle_xpub)
 
     return parser.parse_args()
 

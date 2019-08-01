@@ -32,13 +32,18 @@ A_BUTTON = Pushbutton(A_PIN)
 B_BUTTON = Pushbutton(B_PIN)
 C_BUTTON = Pushbutton(C_PIN)
 
-KEY = None  # HDPrivateKey
+MASTER = None  # HDPrivateKey
 INDEX = 0
 ADDRESS = "bech32"  # bech32 or legacy
+PATH_PREFIX = "m/84'/1'/0'"
 
 lcd = LCD()
 lcd.set_font(fonts.tt24)
 lcd.erase()
+
+def get_path():
+    path = PATH_PREFIX + '/' + str(INDEX)
+    return path.encode()
 
 def release_button(pin): 
     if pin == A_PIN:
@@ -48,7 +53,9 @@ def release_button(pin):
     if pin == C_PIN:
         lcd.print("Button C")
 
-def print_address(key):
+def print_address():
+    path = get_path()
+    key = MASTER.traverse(path)
     if ADDRESS == 'bech32':
         address = key.bech32_address()
     elif ADDRESS == 'legacy':
@@ -58,8 +65,7 @@ def print_address(key):
         raise ValueError("Invalid ADDRESS value")
     lcd.erase()
     lcd.set_pos(20, 20)
-    path = "m/84'/1'/0'/" + str(INDEX)  # FIXME: copy pasta
-    lcd.print(path)
+    lcd.print(path.decode())
     lcd.print(address)
 
 
@@ -72,8 +78,7 @@ def traverse_button(pin):
         ADDRESS = 'bech32' if ADDRESS == 'legacy' else 'legacy' 
     if pin == C_PIN:
         INDEX += 1
-    key = KEY.child(INDEX, False)
-    print_address(key)
+    print_address()
 
 
 async def button_manager():
@@ -152,7 +157,11 @@ def handle_msg(msg):
             "signed": signed,
         }
     elif msg["command"] == "addr":
-        return handle_addr()
+        path = msg['payload']['path'].encode()
+        return handle_addr(path)
+    elif msg["command"] == "xpub":
+        path = msg['payload']['path'].encode()
+        return handle_xpub(path)
     else:
         return {
             "error": "command not recognized: " + msg['command'],
@@ -164,7 +173,7 @@ def handle_sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_value
     # secret = 58800187338825965989061197411175755305019286370732616970021105328088303800803
     # private_key = PrivateKey(secret)
 
-    private_key = KEY.child(0, False).private_key
+    private_key = MASTER.traverse(get_path()).private_key
 
     items = list(zip(range(len(tx.tx_ins)), tx.tx_ins, script_pubkeys, redeem_scripts, witness_scripts, input_values))
     assert len(items) == len(tx.tx_ins), 'items were mangled'
@@ -189,35 +198,42 @@ def handle_sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_value
             raise ValueError('unknown input type')
     return hexlify(tx.serialize())
 
-def handle_addr():
-    # TODO: require bip32 path argument
-    addr = KEY.child(0, False).bech32_address()
+def handle_addr(path):
+    addr = MASTER.traverse(path).bech32_address()
     return {
         "address": addr,
     }
 
-async def start():
-    global KEY
+def handle_xpub(path):
+    key = MASTER.traverse(path)
+    xpub = key.pub.xpub()
+    return {
+        "xpub": xpub,
+    }
 
-    # attempt to load KEY from filesystem, otherwise generate and print mnemonic
+async def start():
+    global MASTER
+
+    # attempt to load MASTER from filesystem, otherwise generate and print mnemonic
     try:
         with open('key', 'rb') as f:
-            KEY = HDPrivateKey.parse(f)
-            child = KEY.child(0, False)
-            print_address(child)
+            MASTER = HDPrivateKey.parse(f)
+            print_address()
+            print("loaded private key")
     except:
         mnemonic = secure_mnemonic()
         mnemonic_columns(mnemonic)
         password = ""
-        path = b"m/84'/1'/0'"
-        KEY = HDPrivateKey.from_mnemonic(mnemonic, password, path=path, testnet=True)
+        path = b"m"
+        MASTER = HDPrivateKey.from_mnemonic(mnemonic, password, path=path, testnet=True)
 
         # TODO
         # sd = machine.SDCard(slot=2, mosi=23, miso=19, sck=18, cs=4)
         # uos.mount(sd, '/sd')
 
         with open("key", "wb") as f:
-            f.write(KEY.serialize())
+            f.write(MASTER.serialize())
+            print("generated and saved private key to disk")
 
 def main():
     loop = uasyncio.get_event_loop()
