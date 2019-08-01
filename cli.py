@@ -25,23 +25,15 @@ wallet_rpc = AuthServiceProxy(rpc_template % ('bitcoin', 'python', 'localhost', 
 def sat_to_btc(d):
     return "{0:.8f}".format(d)
 
+class DeviceException(Exception):
+    pass
 
-def sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_values):
-    # request signature over serial port
-    command = "sign"
-    msg = {
-        "command": command,
-        "payload": {
-            "tx": tx,
-            "script_pubkeys": script_pubkeys,
-            "redeem_scripts": redeem_scripts,
-            "witness_scripts": witness_scripts,
-            "input_values": input_values,
-        }
-    }
+def send_to_device(command, payload):
+    # send msg to device
+    msg = {"command": command, "payload": payload}
     ser.write(json.dumps(msg).encode() + b'\r\n')
 
-    # wait for wallet response
+    # wait for response from device
     while True:
         raw_res = ser.read_until(b'\r\n').strip(b'\r\n').decode()
         try:
@@ -49,11 +41,23 @@ def sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_values):
         except:
             print("error parsing:", raw_res)
             continue
-        if "signed" not in res:
+        if "result" in res:
+            return res['result']
+        elif "error" in res:
+            raise DeviceException(res["error"])
+        else:
             print("other json:", res)
-            continue
-        return res['signed']
 
+
+def sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_values):
+    payload = {
+        "tx": tx,
+        "script_pubkeys": script_pubkeys,
+        "redeem_scripts": redeem_scripts,
+        "witness_scripts": witness_scripts,
+        "input_values": input_values,
+    }
+    return send_to_device("sign", payload)
 
 def create_wallet_and_export(xpub):
     # load watch-only "bitboy" wallet, and create it if it doesn't exist yet
@@ -133,60 +137,14 @@ def handle_send(args):
     print("result", sent)
 
 def handle_address(args):
-    # FIXME: an "xpub" command would be better since we're using descriptors now ...
-
-
-    msg = {
-        "command": "addr",
-        "payload": {
-            "path": args.path,
-        }
-    }
-    ser.write(json.dumps(msg).encode() + b'\r\n')
-
-    # FIXME
-    # wait for wallet response
-    while True:
-        raw_res = ser.read_until(b'\r\n').strip(b'\r\n').decode()
-        print(raw_res)
-        try:
-            res = json.loads(raw_res)
-        except:
-            print("error parsing:", raw_res)
-            continue
-        if "address" not in res:
-            print("other json:", res)
-            continue
-        else:
-            break
-    address = res['address']
+    payload = {"path": args.path}
+    address = send_to_device('addr', payload)
     print(address)
 
 def handle_xpub(args):
     # FIXME: copy-pasta
-    msg = {
-        "command": "xpub",
-        "payload": {
-            "path": args.path,
-        },
-    }
-    ser.write(json.dumps(msg).encode() + b'\r\n')
-
-    # wait for wallet response
-    while True:
-        raw_res = ser.read_until(b'\r\n').strip(b'\r\n').decode()
-        print(raw_res)
-        try:
-            res = json.loads(raw_res)
-        except:
-            print("error parsing:", raw_res)
-            continue
-        if "xpub" not in res:
-            print("other json:", res)
-            continue
-        else:
-            break
-    xpub = res['xpub']
+    payload = {"path": args.path}
+    xpub = send_to_device('xpub', payload)
     print("xpub", xpub)
     if args.watch:
         print("exporting to bitcoin core")

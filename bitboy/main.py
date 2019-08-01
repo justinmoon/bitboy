@@ -96,8 +96,9 @@ async def serial_manager():
             msg = json.loads(raw_msg.decode().strip())
         except Exception as e:
             continue
-        res = handle_msg(msg)
-        json_res = json.dumps(res) + '\r\n'  # FIXME
+        result = handle_msg(msg)
+        response = {"result": result}
+        json_res = json.dumps(response) + '\r\n'  # FIXME
         await swriter.awrite(json_res)
 
 def title(s):
@@ -152,10 +153,7 @@ def handle_msg(msg):
         redeem_scripts = [script_from_hex(hx) for hx in msg['payload']['redeem_scripts']]
         witness_scripts = [script_from_hex(hx) for hx in msg['payload']['witness_scripts']]
         input_values = msg['payload']['input_values']
-        signed = handle_sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_values)
-        return {
-            "signed": signed,
-        }
+        return handle_sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_values)
     elif msg["command"] == "addr":
         path = msg['payload']['path'].encode()
         return handle_addr(path)
@@ -199,17 +197,11 @@ def handle_sign(tx, script_pubkeys, redeem_scripts, witness_scripts, input_value
     return hexlify(tx.serialize())
 
 def handle_addr(path):
-    addr = MASTER.traverse(path).bech32_address()
-    return {
-        "address": addr,
-    }
+    return MASTER.traverse(path).bech32_address()
 
 def handle_xpub(path):
     key = MASTER.traverse(path)
-    xpub = key.pub.xpub()
-    return {
-        "xpub": xpub,
-    }
+    return key.pub.xpub()
 
 async def start():
     global MASTER
