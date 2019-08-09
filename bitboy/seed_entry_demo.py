@@ -2,12 +2,15 @@
 https://github.com/m5stack/M5Cloud/tree/master/examples/FACES
 """
 
-class Faces:
+from machine import I2C, Pin
+
+PIN = Pin(5)
+
+class Keyboard:
     '''M5Stack MicroPython FACES keyboard I2C driver'''
 
     def __init__(self, i2c=None):
         if i2c == None:
-            from machine import I2C, Pin # FIXME
             self.i2c = I2C(sda=Pin(21), scl=Pin(22))
         else:
             self.i2c = i2c
@@ -18,13 +21,11 @@ class Faces:
         return self.i2c.readfrom(self.addr, 1)
 
     def _callback(self, pin):
-        from machine import Pin
-        if pin == Pin(5):
+        if pin == PIN:
             self.cb(self.read())
 
     def callback(self, cb):
-        from machine import Pin
-        self.pin = Pin(5)
+        self.pin = PIN
         self.pin.init(Pin.IN)
         self.pin.irq(trigger=Pin.IRQ_FALLING, handler=self._callback)
         self.cb = cb
@@ -36,7 +37,7 @@ lcd = LCD()
 lcd.set_font(fonts.tt24)
 lcd.erase()
 
-keyboard = Faces()
+keyboard = Keyboard()
 
 current = ''
 seed = []
