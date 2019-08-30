@@ -1,0 +1,112 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=0.7"><meta name="mobile-web-app-capable" content="yes">
+  <title>Wallet interface</title>
+  <link rel="stylesheet" type="text/css" href="/static/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="/static/cover.css">
+  <link rel="stylesheet" type="text/css" href="/static/style.css">
+</head>
+<body class="text-center">
+  <h3>QR Scanner</h3>
+  <div class="popup" id="popup">
+    <video muted playsinline id="qr-video" class="video"></video>
+  </div>
+  <div class="row">
+    <div class="col">
+      <a href="#" id="xpub">xpub</a>
+      <a href="#" id="signatures">signatures</a>
+      <div id="signedpsbt"></div>
+      {% if msg %}
+      <img src="{{ qrcode(msg) }}"/>
+      {% endif %}
+
+      <form action="/" method="post">
+        <div class="form-row">
+          <div class="col">
+            <input name="recipient" type="text" class="form-control" placeholder="Recipient Address">
+          </div>
+          <div class="col">
+            <input name="satoshis" type="number" class="form-control" placeholder="Satoshis to Send">
+          </div>
+          <button type="submit" class="btn btn-primary">Create Transaction</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+</body>
+</html>
+
+<script type="module">
+  import QrScanner from "/static/qr/qr-scanner.min.js";
+  QrScanner.WORKER_PATH = '/static/qr/qr-scanner-worker.min.js';
+
+  const video = document.getElementById('qr-video');
+
+  const xpubScanner = new QrScanner(video, result => {
+    console.log(result);
+    reportXpub(result);
+    document.getElementById("signedpsbt").value = result;
+    document.getElementById("popup").style.display = 'none';
+    xpubScanner.stop();
+  });
+  document.getElementById("xpub").addEventListener("click", function(){
+    document.getElementById("popup").style.display = 'flex';
+    xpubScanner.start();
+  });
+  document.getElementById("popup").addEventListener("click", function(){
+    document.getElementById("popup").style.display = 'none';
+    xpubScanner.stop();
+  });
+
+  const sigScanner = new QrScanner(video, result => {
+    console.log(result);
+    reportSignature(result);
+    document.getElementById("signedpsbt").value = result;
+    document.getElementById("popup").style.display = 'none';
+    sigScanner.stop();
+  });
+  document.getElementById("signatures").addEventListener("click", function(){
+    document.getElementById("popup").style.display = 'flex';
+    sigScanner.start();
+  });
+  document.getElementById("popup").addEventListener("click", function(){
+    document.getElementById("popup").style.display = 'none';
+    sigScanner.stop();
+  });
+
+  function reportXpub(xpub) {
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function () {
+      console.log(JSON.parse(this.responseText));
+      if (xhr.status == 200) {
+        console.log('success');
+      } else {
+        console.log('failure');
+      }
+    };
+    xhr.open('POST', 'http://localhost:9999/xpub');
+    xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+    let json = JSON.stringify({"xpub": xpub})
+    xhr.send(json);
+  }
+
+  function reportSignature(signature) {
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function () {
+      console.log(JSON.parse(this.responseText));
+      if (xhr.status == 200) {
+        console.log('success');
+      } else {
+        console.log('failure');
+      }
+    };
+    xhr.open('POST', 'http://localhost:9999/signature');
+    xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+    let body = JSON.stringify({"signature": signature})
+    xhr.send(body);
+  }
+
+</script>
