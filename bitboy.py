@@ -24,6 +24,25 @@ PARTIAL_QR = ''
 last_qr = 0
 
 KEYBOARD = keyboard.KeyboardDriver(cb_fall=lambda value: lcd.print(str(value)))
+
+async def qr_callback(b):
+    # this is very hacky b/c qr driver will return parts of a qr code at-a-time
+    # and i don't have a standard way to know that I have the whole thing (need checksum or something)
+    # also, doesn't accept commands yet ... just transaction signing ...
+    global PARTIAL_QR, last_qr
+    if time.time() - last_qr > 1:
+        PARTIAL_QR = ''
+    last_qr = time.time()
+    PARTIAL_QR += b.decode()
+    try:
+        msg = json.loads(PARTIAL_QR)
+        print('good json', msg)
+    except:
+        print('bad json', repr(PARTIAL_QR))
+        return 
+    tx = Tx.parse(BytesIO(unhexlify(msg['tx'])), testnet=True)
+    signed = await sign_tx(tx, msg['input_meta'], msg['output_meta'])
+
 QRSCANNER = qr.QRScanner(qr_callback)
 
 # TODO: I need a router class that keeps track of history, can go "back"
@@ -41,7 +60,6 @@ class Screen:
 
     def on_keypress(self, value):
         # a little hacky that there's no self 
-        print(value)
         pass
 
     def render(self):
@@ -140,8 +158,8 @@ class DisplayXpubScreen(Screen):
         print('xpub screen')
         lcd.erase()
         # FIXME
-        # xpub = KEY.traverse(b"m/69'").xpub()
-        # lcd.qr(xpub)
+        xpub = KEY.traverse(b"m/69'").xpub()
+        lcd.qr(xpub)
 
 class DisplaySignatures(Screen):
 
@@ -155,7 +173,7 @@ class DisplaySignatures(Screen):
             HomeScreen().visit()
         # more inputs left
         else:
-            DisplayXpubScreen(self.tx, self.index + 1)
+            DisplaySignatures(self.tx, self.index + 1)
 
     def a_release(self):
         self.nav()
@@ -308,7 +326,7 @@ class SeedEntryScreen(Screen):
                 self.current = ''
                 if len(self.seed) == self.seed_length:
                     save_key(' '.join(self.seed))
-                    return HomeScreen().visit()
+                    return DisplayXpubScreen().visit()
                 else:
                     return SeedEntryScreen(self.seed_length, self.current, self.seed).visit()
 
@@ -389,24 +407,6 @@ async def sign_tx(tx, input_meta, output_meta):
 
     print('SIGNED')
     DisplaySignatures(tx, 0).visit()
-
-async def qr_callback(b):
-    # this is very hacky b/c qr driver will return parts of a qr code at-a-time
-    # and i don't have a standard way to know that I have the whole thing (need checksum or something)
-    # also, doesn't accept commands yet ... just transaction signing ...
-    global PARTIAL_QR, last_qr
-    if time.time() - last_qr > 1:
-        PARTIAL_QR = ''
-    last_qr = time.time()
-    PARTIAL_QR += b.decode()
-    try:
-        msg = json.loads(PARTIAL_QR)
-        print('good json', msg)
-    except:
-        print('bad json', repr(PARTIAL_QR))
-        return 
-    tx = Tx.parse(BytesIO(unhexlify(msg['tx'])), testnet=True)
-    signed = await sign_tx(tx, msg['input_meta'], msg['output_meta'])
 
 async def serial_manager():
     # TODO: refactor this into base firmware. wallet just handles the messages ...

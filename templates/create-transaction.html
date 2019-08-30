@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+{% if msg %}
+<h3 class="text-center">Scan this unsigned transaction with BitBoy</h3>
+<div>After you sign with BitBoy, <a href="/add-signature">scan signature QR codes it presents</a><span>
+<img src="{{ qrcode(msg) }}"/>
+<br/>
+<br/>
+{% else %}
+<h3 class="text-center">Create Transaction</h3>
+<form action="/create-transaction" method="post">
+  <div class="form-row">
+    <div class="col">
+      <input name="recipient" type="text" class="form-control" placeholder="Recipient Address">
+    </div>
+    <div class="col">
+      <input name="satoshis" type="number" class="form-control" placeholder="Satoshis to Send">
+    </div>
+    <button type="submit" class="btn btn-primary">Create Transaction</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

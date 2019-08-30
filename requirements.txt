@@ -20,6 +20,9 @@ urllib3==1.25.3
 flask
 Flask-QRcode
 
+# bedrock reqs not getting installed
+pbkdf2
+
 
 # Can be more convenient for development
 # -e ../../projects/bedrock

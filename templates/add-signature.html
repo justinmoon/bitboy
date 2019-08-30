@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<h3 class="text-center">Add Signature</h3>
+<div class="popup" id="popup">
+  <video muted playsinline id="qr-video" class="video"></video>
+</div>
+<div id="value"></div>
+{% endblock %}
+
+
+{% block script %}
+<script type="module">
+  import QrScanner from "/static/qr/qr-scanner.min.js";
+  QrScanner.WORKER_PATH = '/static/qr/qr-scanner-worker.min.js';
+
+  const video = document.getElementById('qr-video');
+
+  const sigScanner = new QrScanner(video, result => {
+    console.log(result);
+    reportSignature(result);
+    document.getElementById("signedpsbt").value = result;
+    document.getElementById("popup").style.display = 'none';
+    sigScanner.stop();
+  });
+  sigScanner.start();
+
+
+  function reportSignature(signature) {
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function () {
+      console.log(JSON.parse(this.responseText));
+      if (xhr.status == 200) {
+        console.log('success');
+      } else {
+        console.log('failure');
+      }
+    };
+    xhr.open('POST', 'http://localhost:9999/add-signature');
+    xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+    let body = JSON.stringify({"signature": signature})
+    xhr.send(body);
+  }
+
+</script>
+{% endblock %}

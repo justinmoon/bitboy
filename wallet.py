@@ -19,18 +19,17 @@ class Wallet:
     filename = "wallet.json"
     export_size = 100
 
-    def __init__(self, xpub, address_index=0):
+    def __init__(self, xpub, address_index=0, tx_data=None):
         self.xpub = xpub
         self.address_index = address_index
+        self.tx_data = tx_data
 
     @classmethod
-    def create(cls, xpub):  # artificially low for testing
+    def create(cls, xpub=None):
         if isfile(cls.filename):
             raise OSError("wallet file already exists")
-        # create watch-only Bitcoin Core wallet
-        # WalletRPC('').create_watchonly_wallet('bitboy')  # FIXME
-        # export first chunk of receiving & change addresses
         xpub = HDPublicKey.parse(BytesIO(xpub.encode()))
+        WalletRPC('').create_watchonly_wallet('bitboy')
         wallet = cls(xpub)
         wallet.bitcoind_export()
         wallet.save()
@@ -40,6 +39,7 @@ class Wallet:
         dict = {
             'xpub': self.xpub.xpub(),
             'address_index': self.address_index,
+            'tx_data': self.tx_data,
         }
         return json.dumps(dict, indent=4)
 
@@ -89,7 +89,7 @@ class Wallet:
         return None, None
 
     def addresses(self):
-        return [pubkey.point.address(testnet=True) for key, path in self.pubkeys()]
+        return [pubkey.point.address(testnet=True) for pubkey, path in self.pubkeys()]
 
     def consume_address(self):
         if self.address_index % self.export_size == 0:
@@ -151,6 +151,11 @@ class Wallet:
                 output_meta.append({'change': True, 'derivation_path': derivation_path})
 
         return fundedtx, input_meta, output_meta
+
+    def start_tx(self, address, amount, fee):
+        tx, input_meta, output_meta = self.prepare_tx(address, amount, fee)
+        self.tx_data = {'tx': tx, 'input_meta': input_meta, 'output_meta': output_meta}
+        self.save()
 
     def send(self, address, amount, fee):
         # FIXME: what about QR?
