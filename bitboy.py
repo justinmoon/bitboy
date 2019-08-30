@@ -24,23 +24,6 @@ PARTIAL_QR = ''
 last_qr = 0
 
 KEYBOARD = keyboard.KeyboardDriver(cb_fall=lambda value: lcd.print(str(value)))
-
-async def qr_callback(b):
-    global PARTIAL_QR, last_qr
-    if time.time() - last_qr > 1:
-        PARTIAL_QR = ''
-    last_qr = time.time()
-    PARTIAL_QR += b.decode()
-    try:
-        msg = json.loads(PARTIAL_QR)
-        print('good json', msg)
-    except:
-        print('bad json', repr(PARTIAL_QR))
-        return 
-    tx = Tx.parse(BytesIO(unhexlify(msg['tx'])), testnet=True)
-    signed = await sign_tx(tx, msg['input_meta'], msg['output_meta'])
-
-
 QRSCANNER = qr.QRScanner(qr_callback)
 
 # TODO: I need a router class that keeps track of history, can go "back"
@@ -260,7 +243,6 @@ class SeedChoiceScreen(Screen):
             mnemonic = secure_mnemonic()
             MnemonicScreen(mnemonic).visit()
 
-
     def c_release(self):
         # input mnemonic
         SeedEntryScreen(12, '', MNEMONIC[:11]).visit()  # FIXME
@@ -283,112 +265,6 @@ class AlertScreen(Screen):
         lcd.alert(self.msg)
         time.sleep(self.timeout)
         self.screen.visit()
-
-def seed_rng():
-    # FIXME
-    from urandom import seed
-    seed(999)
-
-def load_key():
-    global KEY
-    with open('/sd/key.txt', 'rb') as f:
-        KEY = HDPrivateKey.parse(f)
-
-def save_key(mnemonic):
-    '''saves key to disk, sets global KEY variable'''
-    global KEY
-    password = ''
-    derivation_path = b'm'
-    KEY = HDPrivateKey.from_mnemonic(mnemonic, password, path=derivation_path, testnet=True)
-    with open('/sd/key.txt', 'wb') as f:
-        f.write(KEY.serialize())
-
-def start():
-    # FIXME
-    lcd.erase()
-    seed_rng()
-
-    # mount SD card to filesystem
-    sd = SDCard()
-    os.mount(sd, '/sd')
-
-    # # load key if it exists
-    # if 'key.txt' in os.listdir('/sd'):
-        # load_key()
-        # TraverseScreen().visit()
-    # # create and display mnemonic, derive and save key if it doesn't
-    # else:
-    SeedChoiceScreen().visit()
-
-async def sign_tx(tx, input_meta, output_meta):
-    print("SIGNING")
-    # sanity checks
-    assert len(tx.tx_outs) == len(output_meta), "outputs and ouput_meta different lengths"
-    assert len(tx.tx_ins) == len(input_meta), "inputs and inputs_meta different lengths"
-    print("SANE")
-
-    # ask user to confirm each output
-    ConfirmOutputScreen(tx, 0, output_meta).visit()
-    print("navigated")
-
-    # wait for confirmation or cancellation
-    while True:
-        print('waiting for SIGN_IT / DONT_SIGN_IT')
-        if SIGN_IT.is_set():
-            SIGN_IT.clear()
-            break
-        if DONT_SIGN_IT.is_set():
-            DONT_SIGN_IT.clear()
-            # FIXME: how to propogate cancellation
-            return json.dumps({"error": "cancelled by user"})
-        await uasyncio.sleep(1)
-
-    # sign each input
-    print('SIGNING')
-    for i, meta in enumerate(input_meta):
-        script_hex = meta['script_pubkey']
-        script_pubkey = Script.parse(BytesIO(unhexlify(script_hex)))
-        receiving_path = meta['derivation_path'].encode()
-        receiving_key = KEY.traverse(receiving_path).private_key
-        tx.sign_input_p2pkh(i, receiving_key, script_pubkey)
-
-    print('SIGNED')
-    DisplaySignatures(tx, 0).visit()
-
-async def serial_manager():
-    # TODO: refactor this into base firmware. wallet just handles the messages ...
-    sreader = uasyncio.StreamReader(stdin)
-    swriter = uasyncio.StreamWriter(stdout, {})  # TODO: what is this second param?
-    while True:
-        msg_bytes = await sreader.readline()
-        msg_str = msg_bytes.decode()
-        try:
-            msg = json.loads(msg_str)
-        except Exception as e:
-            print('bad msg')
-            print(msg_str)
-            print(e)
-            continue
-
-        if msg['command'] == 'xpub':
-            derivation_path = msg['derivation_path'].encode()
-            child = KEY.traverse(derivation_path)
-            xpub = child.xpub()
-            res = json.dumps({"xpub": xpub})
-            await swriter.awrite(res+'\n')
-
-        if msg['command'] == 'address':
-            derivation_path = msg['derivation_path'].encode()
-            child = KEY.traverse(derivation_path)
-            address = child.address()
-            res = json.dumps({"address": address})
-            await swriter.awrite(res+'\n')
-
-        if msg['command'] == 'sign':
-            tx = Tx.parse(BytesIO(unhexlify(msg['tx'])), testnet=True)
-            await sign_tx(tx, msg['input_meta'], msg['output_meta'])
-            res = json.dumps({"tx": hexlify(tx.serialize())})
-            await swriter.awrite(res+'\n')
 
 class SeedEntryCompleteScreen(Screen):
 
@@ -454,6 +330,118 @@ class SeedEntryScreen(Screen):
         lcd.set_pos(int((lcd.width / 2) - 30), int(lcd.height / 2))
         lcd.write(self.current)
 
+def load_key():
+    global KEY
+    with open('/sd/key.txt', 'rb') as f:
+        KEY = HDPrivateKey.parse(f)
+
+def save_key(mnemonic):
+    '''saves key to disk, sets global KEY variable'''
+    global KEY
+    password = ''
+    derivation_path = b'm'
+    KEY = HDPrivateKey.from_mnemonic(mnemonic, password, path=derivation_path, testnet=True)
+    with open('/sd/key.txt', 'wb') as f:
+        f.write(KEY.serialize())
+
+def start():
+    # FIXME
+    lcd.erase()
+
+    # mount SD card to filesystem
+    sd = SDCard()
+    os.mount(sd, '/sd')
+
+    # navigate to first screen
+    SeedChoiceScreen().visit()
+
+async def sign_tx(tx, input_meta, output_meta):
+    print("SIGNING")
+    # sanity checks
+    assert len(tx.tx_outs) == len(output_meta), "outputs and ouput_meta different lengths"
+    assert len(tx.tx_ins) == len(input_meta), "inputs and inputs_meta different lengths"
+    print("SANE")
+
+    # ask user to confirm each output
+    ConfirmOutputScreen(tx, 0, output_meta).visit()
+    print("navigated")
+
+    # wait for confirmation or cancellation
+    while True:
+        print('waiting for SIGN_IT / DONT_SIGN_IT')
+        if SIGN_IT.is_set():
+            SIGN_IT.clear()
+            break
+        if DONT_SIGN_IT.is_set():
+            DONT_SIGN_IT.clear()
+            # FIXME: how to propogate cancellation
+            return json.dumps({"error": "cancelled by user"})
+        await uasyncio.sleep(1)
+
+    # sign each input
+    print('SIGNING')
+    for i, meta in enumerate(input_meta):
+        script_hex = meta['script_pubkey']
+        script_pubkey = Script.parse(BytesIO(unhexlify(script_hex)))
+        receiving_path = meta['derivation_path'].encode()
+        receiving_key = KEY.traverse(receiving_path).private_key
+        tx.sign_input_p2pkh(i, receiving_key, script_pubkey)
+
+    print('SIGNED')
+    DisplaySignatures(tx, 0).visit()
+
+async def qr_callback(b):
+    # this is very hacky b/c qr driver will return parts of a qr code at-a-time
+    # and i don't have a standard way to know that I have the whole thing (need checksum or something)
+    # also, doesn't accept commands yet ... just transaction signing ...
+    global PARTIAL_QR, last_qr
+    if time.time() - last_qr > 1:
+        PARTIAL_QR = ''
+    last_qr = time.time()
+    PARTIAL_QR += b.decode()
+    try:
+        msg = json.loads(PARTIAL_QR)
+        print('good json', msg)
+    except:
+        print('bad json', repr(PARTIAL_QR))
+        return 
+    tx = Tx.parse(BytesIO(unhexlify(msg['tx'])), testnet=True)
+    signed = await sign_tx(tx, msg['input_meta'], msg['output_meta'])
+
+async def serial_manager():
+    # TODO: refactor this into base firmware. wallet just handles the messages ...
+    sreader = uasyncio.StreamReader(stdin)
+    swriter = uasyncio.StreamWriter(stdout, {})  # TODO: what is this second param?
+    while True:
+        msg_bytes = await sreader.readline()
+        msg_str = msg_bytes.decode()
+        try:
+            msg = json.loads(msg_str)
+        except Exception as e:
+            print('bad msg')
+            print(msg_str)
+            print(e)
+            continue
+
+        if msg['command'] == 'xpub':
+            derivation_path = msg['derivation_path'].encode()
+            child = KEY.traverse(derivation_path)
+            xpub = child.xpub()
+            res = json.dumps({"xpub": xpub})
+            await swriter.awrite(res+'\n')
+
+        if msg['command'] == 'address':
+            derivation_path = msg['derivation_path'].encode()
+            child = KEY.traverse(derivation_path)
+            address = child.address()
+            res = json.dumps({"address": address})
+            await swriter.awrite(res+'\n')
+
+        if msg['command'] == 'sign':
+            tx = Tx.parse(BytesIO(unhexlify(msg['tx'])), testnet=True)
+            await sign_tx(tx, msg['input_meta'], msg['output_meta'])
+            res = json.dumps({"tx": hexlify(tx.serialize())})
+            await swriter.awrite(res+'\n')
 
 if __name__ == '__main__':
     start()
@@ -463,4 +451,3 @@ if __name__ == '__main__':
     loop.create_task(KEYBOARD.run())
     loop.create_task(QRSCANNER.run())
     loop.run_forever()
-
