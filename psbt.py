@@ -15,7 +15,7 @@ CTransaction,CTxIn, CTxOut, etc....:
 ser_*, deser_*: functions that handle serialization/deserialization
 """
 
-from io import BytesIO, BufferedReader
+from io import BytesIO
 from codecs import encode
 from .errors import PSBTSerializationError
 import struct
@@ -505,7 +505,7 @@ class PartiallySignedInput:
                 elif len(key) != 1:
                     raise PSBTSerializationError("non witness utxo key is more than one byte type")
                 self.non_witness_utxo = CTransaction()
-                value = BufferedReader(BytesIO(deser_string(f)))
+                value = BytesIO(deser_string(f))
                 self.non_witness_utxo.deserialize(value)
                 self.non_witness_utxo.rehash()
 
@@ -515,7 +515,7 @@ class PartiallySignedInput:
                 elif len(key) != 1:
                     raise PSBTSerializationError("witness utxo key is more than one byte type")
                 self.witness_utxo = CTxOut()
-                value = BufferedReader(BytesIO(deser_string(f)))
+                value = BytesIO(deser_string(f))
                 self.witness_utxo.deserialize(value)
 
             elif key_type == 2:
@@ -565,7 +565,7 @@ class PartiallySignedInput:
                     raise PSBTSerializationError("Duplicate key, input final scriptWitness already provided")
                 elif len(key) != 1:
                     raise PSBTSerializationError("final scriptWitness key is more than one byte type")
-                value = BufferedReader(BytesIO(deser_string(f)))
+                value = BytesIO(deser_string(f))
                 self.final_script_witness.deserialize(value)
 
             else:
@@ -716,7 +716,7 @@ class PSBT(object):
 
     def deserialize(self, psbt):
         hexstring = Base64ToHex(psbt.strip())
-        f = BufferedReader(BytesIO(binascii.unhexlify(hexstring)))
+        f = BytesIO(binascii.unhexlify(hexstring))
         end = len(binascii.unhexlify(hexstring))
 
         # Read the magic bytes
@@ -751,7 +751,7 @@ class PSBT(object):
                     raise PSBTSerializationError("Global unsigned tx key is more than one byte type")
 
                 # read in value
-                value = BufferedReader(BytesIO(deser_string(f)))
+                value = BytesIO(deser_string(f))
                 self.tx.deserialize(value)
 
                 # Make sure that all scriptSigs and scriptWitnesses are empty
