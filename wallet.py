@@ -69,7 +69,17 @@ class Wallet:
     def bitcoind_export(self):
         descriptor = self.descriptor()
         export_range = (self.address_index, self.address_index + self.export_size)
-        WalletRPC('bitboy').export(descriptor, export_range, False)  # FIXME: change=False
+        rpc = WalletRPC('bitboy')
+        rpc.export(descriptor, export_range, False)  # FIXME: change=False
+        # FIXME: hackily update address index based on unspent descriptors ...
+        # this could miss spent transactions ...
+        # FIXME: skips exports between old and new index
+        unspent = rpc.rpc().listunspent(0, 9999999, [], True)
+        for u in unspent:
+            desc = u['desc']
+            ai = int(desc[desc.find('/')+1:desc.find(']')])
+            self.address_index = max(self.address_index, ai+1)
+        self.save()
 
     def derive_pubkey(self, address_index):
         path = f"m/{address_index}"
@@ -168,4 +178,16 @@ class Wallet:
 
         # broadcast
         return rpc.broadcast(signed)
+
+    def balance(self):
+        unconfirmed_balance = 0
+        confirmed_balance = 0
+        unspent = WalletRPC('bitboy').listunspent(0, 9999999, [], True)
+        for u in unspent:
+            if u['confirmations'] > 0:
+                confirmed_balance += u['amount']
+            else:
+                unconfirmed_balance += u['amount']
+        return unconfirmed_balance, confirmed_balance
+
 

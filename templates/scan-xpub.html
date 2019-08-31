@@ -28,7 +28,7 @@
   function reportXpub(xpub) {
     var xhr = new XMLHttpRequest();
     xhr.onload = function () {
-      console.log(JSON.parse(this.responseText));
+      console.log(this.responseText);
       if (xhr.status == 200) {
         console.log('success');
       } else {

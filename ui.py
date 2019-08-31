@@ -60,7 +60,9 @@ def add_signature():
             print(tx.serialize().hex())
             rpc.broadcast(tx.serialize().hex())
             print('broadcasted')
-            wallet.tx_data = None
+            # wallet.tx_data = None
+            # FIXME
+            return tx.id()
         wallet.save()
         return 'ok'
 

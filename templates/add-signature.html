@@ -25,13 +25,17 @@
   });
   sigScanner.start();
 
-
   function reportSignature(signature) {
     var xhr = new XMLHttpRequest();
     xhr.onload = function () {
-      console.log(JSON.parse(this.responseText));
       if (xhr.status == 200) {
         console.log('success');
+        debugger
+        if (this.responseText.length == 64) {
+          setTimeout(function() {
+            document.location.replace('https://blockstream.info/testnet/tx/' + this.responseText);
+          }, 1500);
+        }
       } else {
         console.log('failure');
       }

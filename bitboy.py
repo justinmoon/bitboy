@@ -73,43 +73,6 @@ class Screen:
         KEYBOARD.cb_fall = lambda value: self.on_keypress(value)
         self.render()
 
-class TraverseScreen(Screen):
-
-    def __init__(self, address_index=0, address_type='legacy'):
-        self.address_index = address_index
-        self.address_type = address_type
-
-    def a_release(self):
-        '''decrement address index'''
-        if self.address_index != 0:
-            TraverseScreen(self.address_index - 1, self.address_type).visit()
-
-    def b_release(self):
-        '''flip address type'''
-        address_type = 'bech32' if self.address_type == 'legacy' else 'legacy'
-        TraverseScreen(self.address_index, address_type).visit()
-
-    def c_release(self):
-        '''increment address index'''
-        TraverseScreen(self.address_index + 1, self.address_type).visit()
-    
-    def render(self):
-        # calculate address and derivation path
-        path = "m/44'/1'/0'/{}".format(self.address_index).encode()
-        child = KEY.traverse(path)
-        address = child.address() if self.address_type == 'legacy' else child.bech32_address()
-
-        # print
-        lcd.erase()
-        lcd.set_font(fonts.tt24)
-        lcd.set_pos(20, 20)
-        lcd.print(path.decode())
-        lcd.print(address)
-
-        a = 'prev' if self.address_index > 0 else ''
-        b = 'segwit' if self.address_type == 'legacy' else 'legacy'
-        lcd.label_buttons(a, b, 'next')
-
 class MnemonicScreen(Screen):
 
     def __init__(self, mnemonic):
@@ -325,7 +288,11 @@ class SeedEntryScreen(Screen):
                 self.seed.append(self.current[::])
                 self.current = ''
                 if len(self.seed) == self.seed_length:
-                    save_key(' '.join(self.seed))
+                    mnemonic = ' '.join(self.seed)
+                    password = ''
+                    derivation_path = b'm'
+                    global KEY
+                    KEY = HDPrivateKey.from_mnemonic(mnemonic, password, path=derivation_path, testnet=True)
                     return DisplayXpubScreen().visit()
                 else:
                     return SeedEntryScreen(self.seed_length, self.current, self.seed).visit()
@@ -355,6 +322,7 @@ def load_key():
 
 def save_key(mnemonic):
     '''saves key to disk, sets global KEY variable'''
+    # FIXME: make sure secrets are never overwritten with different keys
     global KEY
     password = ''
     derivation_path = b'm'
@@ -408,46 +376,10 @@ async def sign_tx(tx, input_meta, output_meta):
     print('SIGNED')
     DisplaySignatures(tx, 0).visit()
 
-async def serial_manager():
-    # TODO: refactor this into base firmware. wallet just handles the messages ...
-    sreader = uasyncio.StreamReader(stdin)
-    swriter = uasyncio.StreamWriter(stdout, {})  # TODO: what is this second param?
-    while True:
-        msg_bytes = await sreader.readline()
-        msg_str = msg_bytes.decode()
-        try:
-            msg = json.loads(msg_str)
-        except Exception as e:
-            print('bad msg')
-            print(msg_str)
-            print(e)
-            continue
-
-        if msg['command'] == 'xpub':
-            derivation_path = msg['derivation_path'].encode()
-            child = KEY.traverse(derivation_path)
-            xpub = child.xpub()
-            res = json.dumps({"xpub": xpub})
-            await swriter.awrite(res+'\n')
-
-        if msg['command'] == 'address':
-            derivation_path = msg['derivation_path'].encode()
-            child = KEY.traverse(derivation_path)
-            address = child.address()
-            res = json.dumps({"address": address})
-            await swriter.awrite(res+'\n')
-
-        if msg['command'] == 'sign':
-            tx = Tx.parse(BytesIO(unhexlify(msg['tx'])), testnet=True)
-            await sign_tx(tx, msg['input_meta'], msg['output_meta'])
-            res = json.dumps({"tx": hexlify(tx.serialize())})
-            await swriter.awrite(res+'\n')
-
 if __name__ == '__main__':
     start()
     loop = uasyncio.get_event_loop()
-    ## FIXME: only run this in when a key is available for signing
-    loop.create_task(serial_manager())
     loop.create_task(KEYBOARD.run())
+    ## FIXME: only run this in when a key is available for signing
     loop.create_task(QRSCANNER.run())
     loop.run_forever()

@@ -23,7 +23,7 @@ class WalletRPC:
 
     def rpc(self):
         rpc_template = "http://%s:%s@%s:%s/wallet/%s"
-        url = rpc_template % ('bitcoin', 'python', 'localhost', 18443, self.wallet_name)
+        url = rpc_template % ('bitcoin', 'python', 'localhost', 18332, self.wallet_name)
         return AuthServiceProxy(url, timeout=60*5)  # 5 minute timeouts
     
     def load_wallet(self, account_name):
