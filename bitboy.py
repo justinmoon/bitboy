@@ -126,8 +126,8 @@ class DisplayXpubScreen(Screen):
         print('xpub screen')
         lcd.erase()
         # FIXME
-        # xpub = KEY.traverse(b"m/69'").xpub()
-        # lcd.qr(xpub)
+        xpub = KEY.traverse(b"m/69'").xpub()
+        lcd.qr(xpub)
 
 class DisplaySignatures(Screen):
 
@@ -162,14 +162,13 @@ class HomeScreen(Screen):
 
     def render(self):
         lcd.erase()
-        lcd.title("Home")
+        lcd.alert("Scan PSBT")
 
 class ConfirmOutputScreen(Screen):
 
-    def __init__(self, tx, index, output_meta):
-        self.tx = tx
+    def __init__(self, psbt, index):
+        self.psbt = psbt
         self.index = index
-        self.output_meta = output_meta
 
     def a_release(self):
         print("don't sign")
@@ -181,8 +180,8 @@ class ConfirmOutputScreen(Screen):
 
     def c_release(self):
         # confirm remaining outputs
-        if len(self.tx.tx_outs) > self.index + 1:
-            ConfirmOutputScreen(self.tx, self.index + 1, self.output_meta).visit()
+        if len(self.psbt.tx.vout) > self.index + 1:
+            ConfirmOutputScreen(self.psbt, self.index + 1).visit()
         # done confirming. sign it.
         else:
             SIGN_IT.set()
@@ -197,12 +196,12 @@ class ConfirmOutputScreen(Screen):
         lcd.title("Confirm Output")
 
         lcd.set_font(fonts.tt24)
-        tx_out = self.tx.tx_outs[self.index]
-        print('cmds', tx_out.script_pubkey.cmds)
-        address = tx_out.script_pubkey.address(testnet=True)
-        amount = tx_out.amount
-        change_str = " (change)" if self.output_meta[self.index]['change'] else ''
-        msg = "Are you sure you want to send {} satoshis to {}{}?".format(amount, address, change_str)
+        vout = self.psbt.tx.vout[self.index]
+        script_pubkey = Script.parse(BytesIO(encode_varstr(vout.scriptPubKey)))
+        address = script_pubkey.address(testnet=True)
+        amount = vout.nValue
+        # TODO: use psbt.outputs[i]['hd_keypath'] to detect change
+        msg = "Are you sure you want to send {} satoshis to {}?".format(amount, address)
         lcd.body(msg)
 
         lcd.label_buttons("no", "", "yes")
@@ -296,9 +295,10 @@ class SeedEntryScreen(Screen):
                     mnemonic = ' '.join(self.seed)
                     password = ''
                     derivation_path = b'm'
+                    lcd.alert('Loading Key')
                     global KEY
                     KEY = HDPrivateKey.from_mnemonic(mnemonic, password, path=derivation_path, testnet=True)
-                    return DisplayXpubScreen().visit()
+                    return AlertScreen('Your XPUB', 1.5, DisplayXpubScreen()).visit()
                 else:
                     return SeedEntryScreen(self.seed_length, self.current, self.seed).visit()
 
@@ -344,27 +344,27 @@ def start():
     os.mount(sd, '/sd')
 
     # navigate to first screen
-    SeedChoiceScreen().visit()
+    SeedEntryScreen(12).visit()
 
 async def sign_psbt(psbt):
     tx = Tx.parse(BytesIO(psbt.tx.serialize()))
     print("SIGNING")
 
     # ask user to confirm each output
-    # ConfirmOutputScreen(tx, 0, output_meta).visit()
-    # print("navigated")
+    ConfirmOutputScreen(psbt, 0).visit()
+    print("navigated")
 
     # wait for confirmation or cancellation
-    # while True:
-        # print('waiting for SIGN_IT / DONT_SIGN_IT')
-        # if SIGN_IT.is_set():
-            # SIGN_IT.clear()
-            # break
-        # if DONT_SIGN_IT.is_set():
-            # DONT_SIGN_IT.clear()
-            # # FIXME: how to propogate cancellation
-            # return json.dumps({"error": "cancelled by user"})
-        # await uasyncio.sleep(1)
+    while True:
+        print('waiting for SIGN_IT / DONT_SIGN_IT')
+        if SIGN_IT.is_set():
+            SIGN_IT.clear()
+            break
+        if DONT_SIGN_IT.is_set():
+            DONT_SIGN_IT.clear()
+            # FIXME: how to propogate cancellation
+            return json.dumps({"error": "cancelled by user"})
+        await uasyncio.sleep(1)
 
     # sign each input
     print('SIGNING')
