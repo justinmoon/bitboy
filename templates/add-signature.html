@@ -19,8 +19,6 @@
   const sigScanner = new QrScanner(video, result => {
     console.log(result);
     reportSignature(result);
-    document.getElementById("signedpsbt").value = result;
-    document.getElementById("popup").style.display = 'none';
     sigScanner.stop();
   });
   sigScanner.start();
@@ -29,15 +27,16 @@
     var xhr = new XMLHttpRequest();
     xhr.onload = function () {
       if (xhr.status == 200) {
-        console.log('success');
-        debugger
-        if (this.responseText.length == 64) {
+        if (xhr.responseText.length == 64) {
+          var url = 'https://blockstream.info/testnet/tx/' + xhr.responseText
           setTimeout(function() {
-            document.location.replace('https://blockstream.info/testnet/tx/' + this.responseText);
+            document.location.replace(url);
           }, 1500);
+        } else {
+          alert(xhr.responsetext);
         }
       } else {
-        console.log('failure');
+        alert(xhr.responsetext);
       }
     };
     xhr.open('POST', 'http://localhost:9999/add-signature');

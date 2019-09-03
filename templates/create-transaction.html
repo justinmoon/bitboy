@@ -2,24 +2,30 @@
 
 {% block content %}
 
-{% if msg %}
+{% if psbt %}
 <h3 class="text-center">Scan this unsigned transaction with BitBoy</h3>
 <div>After you sign with BitBoy, <a href="/add-signature">scan signature QR codes it presents</a><span>
-<img src="{{ qrcode(msg) }}"/>
-<br/>
-<br/>
+<div class="m-5">
+  <img src="{{ qrcode(psbt) }}"/>
+</div>
 {% else %}
 <h3 class="text-center">Create Transaction</h3>
-<form action="/create-transaction" method="post">
-  <div class="form-row">
-    <div class="col">
-      <input name="recipient" type="text" class="form-control" placeholder="Recipient Address">
+<div class="container">
+  <div class="row">
+    <div class="col-2"></div>
+    <div class="col-8">
+      <form action="/create-transaction" method="post">
+          <div class="col p-2">
+            <input name="recipient" type="text" class="form-control" placeholder="Recipient Address">
+          </div>
+          <div class="col p-2">
+            <input name="satoshis" type="number" class="form-control" placeholder="Satoshis to Send">
+          </div>
+          <button type="submit" class="btn btn-primary">Create Transaction</button>
+      </form>
     </div>
-    <div class="col">
-      <input name="satoshis" type="number" class="form-control" placeholder="Satoshis to Send">
-    </div>
-    <button type="submit" class="btn btn-primary">Create Transaction</button>
+    <div class="col-2"></div>
   </div>
-</form>
+</div>
 {% endif %}
 {% endblock %}

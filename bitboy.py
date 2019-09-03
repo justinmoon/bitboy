@@ -11,8 +11,10 @@ from asyn import Event
 from m5stack import LCD, fonts, color565, SDCard, buttons, keyboard, qr
 from bitcoin.mnemonic import secure_mnemonic, WORD_LIST
 from bitcoin.hd import HDPrivateKey
+from bitcoin.psbt import PSBT
 from bitcoin.tx import Tx
 from bitcoin.script import Script
+from bitcoin.helper import encode_varstr
 
 # globals
 lcd = LCD()
@@ -30,18 +32,21 @@ async def qr_callback(b):
     # and i don't have a standard way to know that I have the whole thing (need checksum or something)
     # also, doesn't accept commands yet ... just transaction signing ...
     global PARTIAL_QR, last_qr
-    if time.time() - last_qr > 1:
+    if time.time() - last_qr > 2:
+        print('qr reader timeout')
         PARTIAL_QR = ''
     last_qr = time.time()
     PARTIAL_QR += b.decode()
     try:
-        msg = json.loads(PARTIAL_QR)
-        print('good json', msg)
-    except:
-        print('bad json', repr(PARTIAL_QR))
-        return 
-    tx = Tx.parse(BytesIO(unhexlify(msg['tx'])), testnet=True)
-    signed = await sign_tx(tx, msg['input_meta'], msg['output_meta'])
+        print('trying to deserialize')
+        psbt = PSBT()
+        psbt.deserialize(PARTIAL_QR.strip('\r'))
+        print('deserialized')
+    except Exception as e:
+        print(e)
+        print('incomplete')
+        return
+    signed = await sign_psbt(psbt)
 
 QRSCANNER = qr.QRScanner(qr_callback)
 
@@ -121,8 +126,8 @@ class DisplayXpubScreen(Screen):
         print('xpub screen')
         lcd.erase()
         # FIXME
-        xpub = KEY.traverse(b"m/69'").xpub()
-        lcd.qr(xpub)
+        # xpub = KEY.traverse(b"m/69'").xpub()
+        # lcd.qr(xpub)
 
 class DisplaySignatures(Screen):
 
@@ -341,37 +346,43 @@ def start():
     # navigate to first screen
     SeedChoiceScreen().visit()
 
-async def sign_tx(tx, input_meta, output_meta):
+async def sign_psbt(psbt):
+    tx = Tx.parse(BytesIO(psbt.tx.serialize()))
     print("SIGNING")
-    # sanity checks
-    assert len(tx.tx_outs) == len(output_meta), "outputs and ouput_meta different lengths"
-    assert len(tx.tx_ins) == len(input_meta), "inputs and inputs_meta different lengths"
-    print("SANE")
 
     # ask user to confirm each output
-    ConfirmOutputScreen(tx, 0, output_meta).visit()
-    print("navigated")
+    # ConfirmOutputScreen(tx, 0, output_meta).visit()
+    # print("navigated")
 
     # wait for confirmation or cancellation
-    while True:
-        print('waiting for SIGN_IT / DONT_SIGN_IT')
-        if SIGN_IT.is_set():
-            SIGN_IT.clear()
-            break
-        if DONT_SIGN_IT.is_set():
-            DONT_SIGN_IT.clear()
-            # FIXME: how to propogate cancellation
-            return json.dumps({"error": "cancelled by user"})
-        await uasyncio.sleep(1)
+    # while True:
+        # print('waiting for SIGN_IT / DONT_SIGN_IT')
+        # if SIGN_IT.is_set():
+            # SIGN_IT.clear()
+            # break
+        # if DONT_SIGN_IT.is_set():
+            # DONT_SIGN_IT.clear()
+            # # FIXME: how to propogate cancellation
+            # return json.dumps({"error": "cancelled by user"})
+        # await uasyncio.sleep(1)
 
     # sign each input
     print('SIGNING')
-    for i, meta in enumerate(input_meta):
-        script_hex = meta['script_pubkey']
-        script_pubkey = Script.parse(BytesIO(unhexlify(script_hex)))
-        receiving_path = meta['derivation_path'].encode()
-        receiving_key = KEY.traverse(receiving_path).private_key
-        tx.sign_input_p2pkh(i, receiving_key, script_pubkey)
+    for i, tx_in in enumerate(tx.tx_ins):
+        print(hexlify(tx_in.prev_tx))
+        print(psbt.inputs[i].non_witness_utxo.hash.decode())
+        assert hexlify(tx_in.prev_tx) == psbt.inputs[i].non_witness_utxo.hash
+        raw_script_pubkey = psbt.inputs[i].non_witness_utxo.vout[tx_in.prev_index].scriptPubKey
+        script_pubkey = Script.parse(BytesIO(encode_varstr(raw_script_pubkey)))
+        for pubkey, path in psbt.inputs[i].hd_keypaths.items():
+            print(pubkey, path)
+            fingerprint = path[0]
+            child_index = path[1]
+            path = "m/69'/{}".format(child_index).encode()
+            child = KEY.traverse(path)
+            assert child.pub.public_key.sec(compressed=True) == pubkey
+            tx.sign_input_p2pkh(i, child.private_key, script_pubkey)
+            print('signed {}'.format(i))
 
     print('SIGNED')
     DisplaySignatures(tx, 0).visit()

@@ -4,6 +4,8 @@ from os.path import isfile
 from io import BytesIO
 from random import randint
 
+from hwilib.serializations import PSBT
+
 from bedrock.tx import Tx, TxIn, TxOut
 from bedrock.script import address_to_script_pubkey
 from bedrock.helper import sha256
@@ -19,10 +21,10 @@ class Wallet:
     filename = "wallet.json"
     export_size = 100
 
-    def __init__(self, xpub, address_index=0, tx_data=None):
+    def __init__(self, xpub, address_index=0, psbt=None):
         self.xpub = xpub
         self.address_index = address_index
-        self.tx_data = tx_data
+        self.psbt = psbt
 
     @classmethod
     def create(cls, xpub=None):
@@ -39,7 +41,7 @@ class Wallet:
         dict = {
             'xpub': self.xpub.xpub(),
             'address_index': self.address_index,
-            'tx_data': self.tx_data,
+            'psbt': self.psbt.serialize() if self.psbt else '',
         }
         return json.dumps(dict, indent=4)
 
@@ -52,6 +54,10 @@ class Wallet:
     def deserialize(cls, raw_json):
         data = json.loads(raw_json)
         data['xpub'] = HDPublicKey.parse(BytesIO(data['xpub'].encode()))
+        if data['psbt'] != '':
+            psbt = PSBT()
+            psbt.deserialize(data['psbt'])
+            data['psbt'] = psbt
         return cls(**data)
 
     @classmethod
@@ -120,51 +126,32 @@ class Wallet:
 
     def prepare_tx(self, address, amount, fee):
         # FIXME: amount -> satoshis
-        rpc = WalletRPC('bitboy')
+        rpc = WalletRPC('bitboy').rpc()
 
-        # create unfunded transaction
-        tx_ins = []
-        tx_outs = [
-            {address: sat_to_btc(amount)},
-        ]
-        rawtx = rpc.create_raw_transaction(tx_ins, tx_outs)
-        
         # fund it
         change_address = self.consume_address()
-        fundedtx = rpc.fund_raw_transaction(rawtx, change_address)
-
-        # input metadata
-        input_meta = []
-        decoded = rpc.rpc().decoderawtransaction(fundedtx)
-        for tx_in in decoded['vin']:
-            print('iterate input')
-            tx_id = tx_in['txid']
-            tx_index = tx_in['vout']
-            prev_tx = rpc.rpc().getrawtransaction(tx_id, True)
-            script_pubkey = encode_varstr(bytes.fromhex(prev_tx['vout'][tx_index]['scriptPubKey']['hex'])).hex()
-            input_address = prev_tx['vout'][tx_index]['scriptPubKey']['addresses'][0]
-            pubkey, path = self.lookup_pubkey(input_address)
-            derivation_path = f"m/69'/{path[2:]}"
-            print('PATH', derivation_path)
-            input_meta = [{'script_pubkey': script_pubkey, 'derivation_path': derivation_path}]
-
-        # output metadata
-        output_meta = []
-        for tx_out in decoded['vout']:
-            print('iterate output')
-            address = tx_out['scriptPubKey']['addresses'][0]
-            pubkey, path = self.lookup_pubkey(address)
-            if path is None:
-                output_meta.append({'change': False})
-            else:
-                derivation_path = f"m/69'/{path[2:]}"
-                output_meta.append({'change': True, 'derivation_path': derivation_path})
-
-        return fundedtx, input_meta, output_meta
+        raw_psbt = rpc.walletcreatefundedpsbt(
+            # let Bitcoin Core choose inputs
+            [],
+            # Outputs
+            [{address: sat_to_btc(amount)}],
+            # Locktime
+            0,
+            {
+                # Include watch-only outputs
+                "includeWatching": True,
+                # Provide change address b/c Core can't generate it
+                "changeAddress": change_address,
+            },
+            # Include BIP32 derivation paths in the PSBT
+            True,
+        )['psbt']
+        psbt = PSBT()
+        psbt.deserialize(raw_psbt)
+        return psbt
 
     def start_tx(self, address, amount, fee):
-        tx, input_meta, output_meta = self.prepare_tx(address, amount, fee)
-        self.tx_data = {'tx': tx, 'input_meta': input_meta, 'output_meta': output_meta}
+        self.psbt = self.prepare_tx(address, amount, fee)
         self.save()
 
     def send(self, address, amount, fee):

@@ -14,18 +14,13 @@ QRcode(app)
 @app.route("/create-transaction", methods=['GET', 'POST'])
 def create_transaction():
     wallet = Wallet.open()
-    if request.method == 'GET':
-        if wallet.tx_data is not None:
-            msg = json.dumps(wallet.tx_data)
-        else:
-            msg = None
-    else:
+    if request.method == 'POST':
         wallet = Wallet.open()
         wallet.start_tx(
             request.form['recipient'], int(request.form['satoshis']), 300
         )
-        msg = json.dumps(wallet.tx_data)
-    return render_template('create-transaction.html', msg=msg)
+    psbt = wallet.psbt.serialize() if wallet.psbt != '' else None
+    return render_template('create-transaction.html', psbt=psbt)
 
 @app.route("/scan-xpub", methods=['GET', 'POST'])
 def scan_xpub():
@@ -48,7 +43,7 @@ def add_signature():
     else:
         wallet = Wallet.open()
         script_sig = Script.parse(BytesIO(bytes.fromhex(request.json['signature'])))
-        tx = Tx.parse(BytesIO(bytes.fromhex(wallet.tx_data['tx'])))
+        tx = Tx.parse(BytesIO(wallet.psbt.tx.serialize()))
         for i, tx_in in enumerate(tx.tx_ins):
             if tx_in.script_sig.cmds == []:
                 tx.tx_ins[i].script_sig = script_sig
